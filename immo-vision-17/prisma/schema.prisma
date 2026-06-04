@@ -1,0 +1,479 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ USERS & AUTH ============
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  phone         String?
+  image         String?
+  role          Role      @default(BUYER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  favorites     Property[]    @relation("FavoriteProperties")
+  savedSearches SavedSearch[]
+  visits        Visit[]
+  documents     Document[]
+  properties    Property[]    @relation("OwnerProperties")
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============ PROPERTIES ============
+
+model Property {
+  id             String         @id @default(cuid())
+  slug           String         @unique
+  title          String
+  description    String         @db.Text
+  type           PropertyType
+  status         PropertyStatus @default(AVAILABLE)
+  exclusive      Boolean        @default(false)
+  featured       Boolean        @default(false)
+
+  // Pricing
+  price          Int
+  priceReduced   Int?
+  priceHistory   Json           @default("[]")
+
+  // Dimensions
+  surface        Float
+  terrain        Float?
+  rooms          Int
+  bedrooms       Int
+  bathrooms      Int
+  toilets        Int            @default(1)
+  floor          Int?
+  totalFloors    Int?
+  yearBuilt      Int?
+
+  // Location
+  address        String
+  city           String
+  zipCode        String
+  department     String         @default("17")
+  lat            Float?
+  lng            Float?
+
+  // Features
+  hasPool        Boolean        @default(false)
+  hasGarage      Boolean        @default(false)
+  hasParking     Boolean        @default(false)
+  hasCellar      Boolean        @default(false)
+  hasTerrace     Boolean        @default(false)
+  hasBalcony     Boolean        @default(false)
+  hasGarden      Boolean        @default(false)
+  hasSeaView     Boolean        @default(false)
+  hasFireplace   Boolean        @default(false)
+  orientation    String?
+  heating        String?
+  condition      PropertyCondition?
+
+  // Media (premium)
+  images         PropertyImage[]
+  videoUrl       String?
+  virtualTourUrl String?
+  droneVideoUrl  String?
+  floorPlanUrl   String?
+
+  // Energy
+  dpeScore       String?
+  gesScore       String?
+  annualEnergy   Int?
+
+  // SEO
+  metaTitle      String?
+  metaDesc       String?
+
+  // Relations
+  ownerId        String?
+  owner          User?          @relation("OwnerProperties", fields: [ownerId], references: [id])
+  favoritedBy    User[]         @relation("FavoriteProperties")
+  visits         Visit[]
+  documents      Document[]
+  crmDeal        CRMDeal?
+
+  // Stats
+  viewCount      Int            @default(0)
+  contactCount   Int            @default(0)
+  visitCount     Int            @default(0)
+
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  publishedAt    DateTime?
+
+  @@map("properties")
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  url        String
+  alt        String?
+  order      Int      @default(0)
+  isPrimary  Boolean  @default(false)
+  width      Int?
+  height     Int?
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_images")
+}
+
+// ============ ESTIMATION LEADS ============
+
+model EstimationLead {
+  id             String            @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String
+  phone          String
+  address        String
+  city           String
+  zipCode        String?
+  surface        Float
+  terrain        Float?
+  type           PropertyType
+  rooms          Int
+  bedrooms       Int               @default(0)
+  yearBuilt      Int?
+  hasPool        Boolean           @default(false)
+  hasGarage      Boolean           @default(false)
+  hasGarden      Boolean           @default(false)
+  condition      PropertyCondition
+  project        SaleProject
+  estimatedPrice Int?
+  priceMin       Int?
+  priceMax       Int?
+  notes          String?           @db.Text
+  status         LeadStatus        @default(NEW)
+  source         String?           @default("website")
+  assignedTo     String?
+  followUpDate   DateTime?
+  crmDeal        CRMDeal?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("estimation_leads")
+}
+
+// ============ CRM ============
+
+model CRMDeal {
+  id             String          @id @default(cuid())
+  title          String
+  stage          CRMStage        @default(PROSPECT)
+  value          Int?
+  probability    Int             @default(0)
+  notes          String?         @db.Text
+  nextAction     String?
+  nextActionDate DateTime?
+  color          String          @default("#C9A84C")
+  order          Int             @default(0)
+
+  leadId         String?         @unique
+  lead           EstimationLead? @relation(fields: [leadId], references: [id])
+  propertyId     String?         @unique
+  property       Property?       @relation(fields: [propertyId], references: [id])
+
+  activities     CRMActivity[]
+  documents      CRMDocument[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@map("crm_deals")
+}
+
+model CRMActivity {
+  id        String       @id @default(cuid())
+  dealId    String
+  type      ActivityType
+  title     String
+  notes     String?      @db.Text
+  date      DateTime     @default(now())
+  duration  Int?         // minutes
+  outcome   String?
+  deal      CRMDeal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@map("crm_activities")
+}
+
+model CRMDocument {
+  id        String   @id @default(cuid())
+  dealId    String
+  name      String
+  url       String
+  type      String
+  size      Int?
+  deal      CRMDeal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@map("crm_documents")
+}
+
+// ============ VISITS ============
+
+model Visit {
+  id           String      @id @default(cuid())
+  propertyId   String
+  userId       String?
+  visitorName  String
+  visitorEmail String
+  visitorPhone String
+  date         DateTime
+  status       VisitStatus @default(PENDING)
+  notes        String?
+  feedback     String?
+  rating       Int?        // 1-5
+  property     Property    @relation(fields: [propertyId], references: [id])
+  user         User?       @relation(fields: [userId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("visits")
+}
+
+// ============ SAVED SEARCHES ============
+
+model SavedSearch {
+  id        String         @id @default(cuid())
+  userId    String
+  name      String
+  filters   Json
+  alertFreq AlertFrequency @default(DAILY)
+  lastSent  DateTime?
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@map("saved_searches")
+}
+
+// ============ DOCUMENTS ============
+
+model Document {
+  id         String       @id @default(cuid())
+  name       String
+  url        String
+  type       DocumentType
+  propertyId String?
+  userId     String?
+  property   Property?    @relation(fields: [propertyId], references: [id])
+  user       User?        @relation(fields: [userId], references: [id])
+  createdAt  DateTime     @default(now())
+
+  @@map("documents")
+}
+
+// ============ CONTACT ============
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  replied   Boolean  @default(false)
+  source    String?  @default("contact_form")
+  createdAt DateTime @default(now())
+
+  @@map("contact_messages")
+}
+
+// ============ BLOG / SEO ============
+
+model BlogPost {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String
+  content     String    @db.Text
+  coverImage  String?
+  city        String?
+  category    String?
+  tags        String[]  @default([])
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+  viewCount   Int       @default(0)
+  metaTitle   String?
+  metaDesc    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("blog_posts")
+}
+
+// ============ NOTIFICATIONS ============
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("info")
+  read      Boolean  @default(false)
+  link      String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ============ ANALYTICS ============
+
+model PropertyView {
+  id         String   @id @default(cuid())
+  propertyId String
+  ip         String?
+  userAgent  String?
+  source     String?  // google, facebook, direct...
+  createdAt  DateTime @default(now())
+
+  @@map("property_views")
+}
+
+// ============ ENUMS ============
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  AGENT
+  SELLER
+  BUYER
+}
+
+enum PropertyType {
+  MAISON
+  APPARTEMENT
+  TERRAIN
+  VILLA
+  IMMEUBLE
+  LOCAL
+  PARKING
+  AUTRE
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  UNDER_OFFER
+  SOLD
+  WITHDRAWN
+}
+
+enum PropertyCondition {
+  NEUF
+  BON_ETAT
+  A_RAFRAICHIR
+  A_RENOVER
+}
+
+enum SaleProject {
+  URGENT
+  DANS_3_MOIS
+  DANS_6_MOIS
+  PLUS_DE_6_MOIS
+  REFLEXION
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  ARCHIVED
+}
+
+enum CRMStage {
+  PROSPECT
+  ESTIMATION
+  VISITE
+  MANDAT
+  COMMERCIALISATION
+  COMPROMIS
+  VENDU
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  VISIT
+  MEETING
+  NOTE
+  DOCUMENT
+  TASK
+}
+
+enum VisitStatus {
+  PENDING
+  CONFIRMED
+  DONE
+  CANCELLED
+}
+
+enum AlertFrequency {
+  INSTANT
+  DAILY
+  WEEKLY
+}
+
+enum DocumentType {
+  TITLE_DEED
+  DPE
+  FLOOR_PLAN
+  CONTRACT
+  IDENTITY
+  DIAGNOSTICS
+  OTHER
+}
